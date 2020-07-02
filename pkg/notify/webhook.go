@@ -35,13 +35,12 @@ import (
 type Webhook struct {
 	URL         string
 	ClusterName string
-	NotifType 	config.NotifType
+	NotifType   config.NotifType
 }
-
 
 // ShortWebhookPayload contains a short json payload to be sent to webhook url
 type ShortWebhookPayload struct {
-	EventSummary	string      `json:"text"`
+	EventSummary string `json:"text"`
 }
 
 // WebhookPayload contains json payload to be sent to webhook url
@@ -76,7 +75,7 @@ func NewWebhook(c *config.Config) Notifier {
 	return &Webhook{
 		URL:         c.Communications.Webhook.URL,
 		ClusterName: c.Settings.ClusterName,
-		NotifType: c.Communications.Webhook.NotifType,
+		NotifType:   c.Communications.Webhook.NotifType,
 	}
 }
 
@@ -86,14 +85,18 @@ func (w *Webhook) SendEvent(event events.Event) (err error) {
 	// set missing cluster name to event object
 	event.Cluster = w.ClusterName
 
+	var message []byte
 
 	if w.NotifType == config.ShortNotify {
 		jsonPayload := &ShortWebhookPayload{
-			EventSummary:    formatShortMessage(event),
+			EventSummary: formatShortMessage(event),
 		}
 		log.Debugf("Post short message: %v", event)
 
-		err = w.PostShortWebhook(jsonPayload)
+		message, err = json.Marshal(jsonPayload)
+		if err != nil {
+			return err
+		}
 
 	} else {
 		jsonPayload := &WebhookPayload{
@@ -115,8 +118,13 @@ func (w *Webhook) SendEvent(event events.Event) (err error) {
 			Recommendations: event.Recommendations,
 			Warnings:        event.Warnings,
 		}
-		err = w.PostWebhook(jsonPayload)
+		message, err = json.Marshal(jsonPayload)
+		if err != nil {
+			return err
+		}
 	}
+
+	err = w.PostWebhook(message)
 
 	if err != nil {
 		log.Error(err.Error())
@@ -133,12 +141,7 @@ func (w *Webhook) SendMessage(msg string) error {
 }
 
 // PostWebhook posts webhook to listener
-func (w *Webhook) PostWebhook(jsonPayload *WebhookPayload) error {
-
-	message, err := json.Marshal(jsonPayload)
-	if err != nil {
-		return err
-	}
+func (w *Webhook) PostWebhook(message []byte) error {
 
 	req, err := http.NewRequest("POST", w.URL, bytes.NewBuffer(message))
 	if err != nil {
@@ -157,31 +160,3 @@ func (w *Webhook) PostWebhook(jsonPayload *WebhookPayload) error {
 
 	return nil
 }
-
-
-// PostWebhook posts webhook to listener
-func (w *Webhook) PostShortWebhook(jsonPayload *ShortWebhookPayload) error {
-
-	message, err := json.Marshal(jsonPayload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", w.URL, bytes.NewBuffer(message))
-	if err != nil {
-		return err
-	}
-	req.Header.Add("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Error Posting Webhook: %s", string(resp.StatusCode))
-	}
-
-	return nil
-}
-

@@ -20,11 +20,13 @@
 package notify
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/infracloudio/botkube/pkg/config"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,9 +58,10 @@ func TestPostWebhook(t *testing.T) {
 			w := &Webhook{
 				URL:         ts.URL,
 				ClusterName: "test",
+				NotifType:   config.LongNotify,
 			}
-
-			err := w.PostWebhook(&WebhookPayload{})
+			message, _ := json.Marshal(&WebhookPayload{})
+			err := w.PostWebhook(message)
 			assert.Equal(t, test.expected, err)
 		})
 	}
