@@ -152,6 +152,7 @@ type Mattermost struct {
 type Webhook struct {
 	Enabled bool
 	URL     string
+	NotifType NotifType `yaml:",omitempty"`
 }
 
 // Kubectl configuration for executing commands inside cluster

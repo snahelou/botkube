@@ -35,6 +35,13 @@ import (
 type Webhook struct {
 	URL         string
 	ClusterName string
+	NotifType 	config.NotifType
+}
+
+
+// ShortWebhookPayload contains a short json payload to be sent to webhook url
+type ShortWebhookPayload struct {
+	EventSummary	string      `json:"text"`
 }
 
 // WebhookPayload contains json payload to be sent to webhook url
@@ -69,6 +76,7 @@ func NewWebhook(c *config.Config) Notifier {
 	return &Webhook{
 		URL:         c.Communications.Webhook.URL,
 		ClusterName: c.Settings.ClusterName,
+		NotifType: c.Communications.Webhook.NotifType,
 	}
 }
 
@@ -78,27 +86,38 @@ func (w *Webhook) SendEvent(event events.Event) (err error) {
 	// set missing cluster name to event object
 	event.Cluster = w.ClusterName
 
-	jsonPayload := &WebhookPayload{
-		EventMeta: EventMeta{
-			Kind:      event.Kind,
-			Name:      event.Name,
-			Namespace: event.Namespace,
-			Cluster:   event.Cluster,
-		},
-		EventStatus: EventStatus{
-			Type:     event.Type,
-			Level:    event.Level,
-			Reason:   event.Reason,
-			Error:    event.Error,
-			Messages: event.Messages,
-		},
-		EventSummary:    formatShortMessage(event),
-		TimeStamp:       event.TimeStamp,
-		Recommendations: event.Recommendations,
-		Warnings:        event.Warnings,
+
+	if w.NotifType == config.ShortNotify {
+		jsonPayload := &ShortWebhookPayload{
+			EventSummary:    formatShortMessage(event),
+		}
+		log.Debugf("Post short message: %v", event)
+
+		err = w.PostShortWebhook(jsonPayload)
+
+	} else {
+		jsonPayload := &WebhookPayload{
+			EventMeta: EventMeta{
+				Kind:      event.Kind,
+				Name:      event.Name,
+				Namespace: event.Namespace,
+				Cluster:   event.Cluster,
+			},
+			EventStatus: EventStatus{
+				Type:     event.Type,
+				Level:    event.Level,
+				Reason:   event.Reason,
+				Error:    event.Error,
+				Messages: event.Messages,
+			},
+			EventSummary:    formatShortMessage(event),
+			TimeStamp:       event.TimeStamp,
+			Recommendations: event.Recommendations,
+			Warnings:        event.Warnings,
+		}
+		err = w.PostWebhook(jsonPayload)
 	}
 
-	err = w.PostWebhook(jsonPayload)
 	if err != nil {
 		log.Error(err.Error())
 		log.Debugf("Event Not Sent to Webhook %v", event)
@@ -138,3 +157,31 @@ func (w *Webhook) PostWebhook(jsonPayload *WebhookPayload) error {
 
 	return nil
 }
+
+
+// PostWebhook posts webhook to listener
+func (w *Webhook) PostShortWebhook(jsonPayload *ShortWebhookPayload) error {
+
+	message, err := json.Marshal(jsonPayload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", w.URL, bytes.NewBuffer(message))
+	if err != nil {
+		return err
+	}
+	req.Header.Add("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Error Posting Webhook: %s", string(resp.StatusCode))
+	}
+
+	return nil
+}
+
